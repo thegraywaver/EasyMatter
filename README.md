@@ -44,9 +44,42 @@ void loop() {
 
 `EasyMatter.update()` reads the debounced button and keeps the GPIO output synchronized with the Matter on/off state. Use an LED with a suitable resistor or a low-voltage driver; never connect mains voltage directly to an ESP32 GPIO.
 
+## Doorbell button
+
+This profile sends button press and release events through Matter's Generic Switch endpoint. Connect the physical button between GPIO 18 and GND. The Matter controller sees a generic switch, not a dedicated doorbell device; create an automation in the controller to play a chime or send a notification. This profile does not provide a camera or video stream.
+
+In Alexa, add the device through Matter, then create a routine in **More → Routines → +**. Choose the doorbell button's press event as the trigger, then add an Alexa speech or announcement action such as “Hier ist jemand an der Tür”. Choose the Echo speaker that should speak. The available trigger and action names can vary with the Alexa app and controller.
+
+```cpp
+#include <EasyMatter.h>
+
+EasyMatterConfig config;
+
+void setup() {
+  Serial.begin(115200);
+  config.wifiSSID = "YOUR_WIFI_SSID";
+  config.wifiPassword = "YOUR_WIFI_PASSWORD";
+  config.vendor = "Your vendor";
+  config.deviceName = "Doorbell button";
+  config.deviceType = EasyMatterDeviceType::Doorbell;
+
+  EasyMatter.button(18);
+
+  if (!EasyMatter.begin(config)) {
+    Serial.println("EasyMatter initialization failed");
+  }
+}
+
+void loop() {
+  EasyMatter.update();
+}
+```
+
 ## Install and commissioning
 
-Copy this folder into `Documents/Arduino/libraries/EasyMatter`, restart the IDE, select an original ESP32-WROOM-32 board, and select **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the real pairing code and onboarding QR URL returned by Espressif. A QR URL is not an ASCII QR code; scan/use the code through the controller's supported onboarding flow. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the onboarding QR code or enter the manual code printed by the sketch; the exact app steps depend on Alexa app version and account/device support.
+Download `EasyMatter-v0.3.0.zip` from the [latest GitHub release](https://github.com/thegraywaver/EasyMatter/releases/latest), then in Arduino IDE choose **Sketch → Include Library → Add .ZIP Library...** and select the downloaded ZIP. The archive contains one `EasyMatter` folder at its top level. Restart the IDE after installation.
+
+Select an original ESP32-WROOM-32 board and **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the real pairing code and onboarding QR URL returned by Espressif. A QR URL is not an ASCII QR code; scan/use the code through the controller's supported onboarding flow. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the onboarding QR code or enter the manual code printed by the sketch; the exact app steps depend on Alexa app version and account/device support.
 
 ```cpp
 #include <EasyMatter.h>

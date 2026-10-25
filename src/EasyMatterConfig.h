@@ -7,7 +7,8 @@ enum class EasyMatterDeviceType : uint8_t {
   TemperatureSensor, HumiditySensor, TemperatureHumiditySensor,
   ContactSensor, MotionSensor, Thermostat, PressureSensor, IlluminanceSensor,
   WaterLeakSensor, WaterFreezeSensor, RainSensor, GenericSwitch, Fan,
-  WindowCovering, TemperatureControlledCabinet
+  WindowCovering, TemperatureControlledCabinet,
+  Doorbell = GenericSwitch
 };
 
 struct EasyMatterConfig {
