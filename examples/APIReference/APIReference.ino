@@ -14,6 +14,7 @@
     wifiSSID, wifiPassword : 2.4 GHz Wi-Fi credentials
     vendor, deviceName     : Matter product labels
     deviceType             : one EasyMatterDeviceType profile below
+    switchMode             : Button (saved toggle) or TwoWaySwitch (track input)
     debug                  : reserved option (currently no extra debug output)
     initialState           : initial on/off state
     initialBrightness      : 0..255
@@ -24,6 +25,7 @@
     EasyMatterDeviceType::Light, EasyMatterDeviceType::DimmableLight, EasyMatterDeviceType::RgbLight,
     EasyMatterDeviceType::ColorTemperatureLight, EasyMatterDeviceType::EnhancedColorLight,
     EasyMatterDeviceType::Plug, EasyMatterDeviceType::DimmablePlug,
+    EasyMatterDeviceType::Switch,
     EasyMatterDeviceType::TemperatureSensor, EasyMatterDeviceType::HumiditySensor,
     EasyMatterDeviceType::TemperatureHumiditySensor, EasyMatterDeviceType::ContactSensor,
     EasyMatterDeviceType::MotionSensor, EasyMatterDeviceType::Thermostat, EasyMatterDeviceType::PressureSensor,
@@ -49,8 +51,10 @@
     Thermostat: setLocalTemperature(C), setHeatingSetpoint(C),
       setCoolingSetpoint(C), temperature(), heatingSetpoint(),
       coolingSetpoint(). Connect these to your own safe HVAC control logic.
-    Generic switch: switchClick(); button(pin, debounceMs) can emit local
-      button events when the selected profile supports them.
+    Generic switch: switchClick(); button(pin, debounceMs) emits press/release
+      events. Switch: a button toggles and persists on/off state; set
+      config.switchMode = EasyMatterSwitchMode::TwoWaySwitch to follow a
+      maintained physical switch (LOW=on with INPUT_PULLUP).
     Fan: setFanSpeed(0..100), fanSpeed(). setOn() controls fan on/off.
     Window: setLiftPercentage(0..100), liftPercentage(),
       onLiftTarget(callback). Drive the motor yourself and report its position.

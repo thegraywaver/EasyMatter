@@ -8,7 +8,7 @@ void setup() {
   config.wifiPassword = "YOUR_WIFI_PASSWORD";
   config.vendor = "Your vendor";
   config.deviceName = "Doorbell button";
-  config.deviceType = EasyMatterDeviceType::Doorbell;
+  config.deviceType = EasyMatterDeviceType::ContactSensor;
 
   EasyMatter.button(18);
   EasyMatter.pairingResetButton(4);

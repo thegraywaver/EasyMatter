@@ -3,12 +3,16 @@
 
 enum class EasyMatterDeviceType : uint8_t {
   Light, DimmableLight, RgbLight, ColorTemperatureLight, EnhancedColorLight,
-  Plug, DimmablePlug,
+  Plug, DimmablePlug, Switch,
   TemperatureSensor, HumiditySensor, TemperatureHumiditySensor,
   ContactSensor, MotionSensor, Thermostat, PressureSensor, IlluminanceSensor,
   WaterLeakSensor, WaterFreezeSensor, RainSensor, GenericSwitch, Fan,
-  WindowCovering, TemperatureControlledCabinet,
-  Doorbell = GenericSwitch
+  WindowCovering, TemperatureControlledCabinet
+};
+
+enum class EasyMatterSwitchMode : uint8_t {
+  Button,
+  TwoWaySwitch
 };
 
 struct EasyMatterConfig {
@@ -17,6 +21,7 @@ struct EasyMatterConfig {
   const char *vendor;
   const char *deviceName;
   EasyMatterDeviceType deviceType;
+  EasyMatterSwitchMode switchMode;
   bool debug;
   bool initialState;
   uint8_t initialBrightness;
@@ -24,6 +29,6 @@ struct EasyMatterConfig {
   float initialTemperatureC;
   float initialHumidityPercent;
   EasyMatterConfig() : wifiSSID(nullptr), wifiPassword(nullptr), vendor("EasyMatter"),
-    deviceName("EasyMatter device"), deviceType(EasyMatterDeviceType::Light), debug(false), initialState(false),
+    deviceName("EasyMatter device"), deviceType(EasyMatterDeviceType::Light), switchMode(EasyMatterSwitchMode::Button), debug(false), initialState(false),
     initialBrightness(128), initialColorTemperatureMireds(370), initialTemperatureC(20.0f), initialHumidityPercent(50.0f) {}
 };

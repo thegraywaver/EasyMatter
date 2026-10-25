@@ -11,6 +11,20 @@
 
 EasyMatterClass EasyMatter;
 static Preferences settings;
+bool EasyMatterMountedSwitchEndpoint::beginMountedSwitch(bool initialState) {
+  _init();
+  if (getEndPointId() != 0) return false;
+  esp_matter::endpoint::mounted_on_off_control::config_t endpointConfig;
+  endpointConfig.on_off.on_off = initialState;
+  endpointConfig.on_off_lighting.start_up_on_off = nullptr;
+  esp_matter::endpoint_t *endpoint = esp_matter::endpoint::mounted_on_off_control::create(
+    esp_matter::node::get(), &endpointConfig, ENDPOINT_FLAG_NONE, static_cast<void *>(this));
+  if (endpoint == nullptr) return false;
+  setEndPointId(esp_matter::endpoint::get_id(endpoint));
+  onOffState = initialState;
+  started = true;
+  return true;
+}
 static bool updateTemperatureValue(void *context, float value) { return static_cast<EasyMatterClass *>(context)->setTemperature(value); }
 static bool updateHumidityValue(void *context, float value) { return static_cast<EasyMatterClass *>(context)->setHumidity(value); }
 static int hexValue_(char c) {
@@ -64,6 +78,7 @@ bool EasyMatterClass::startEndpoint_() {
     case EasyMatterDeviceType::ColorTemperatureLight: return colorTempLight_.begin(config_.initialState, config_.initialBrightness, config_.initialColorTemperatureMireds);
     case EasyMatterDeviceType::EnhancedColorLight: return enhanced_.begin(config_.initialState, {21,216,128}, config_.initialBrightness, config_.initialColorTemperatureMireds);
     case EasyMatterDeviceType::Plug: return plug_.begin(config_.initialState);
+    case EasyMatterDeviceType::Switch: return switchEndpoint_.beginMountedSwitch(config_.initialState);
     case EasyMatterDeviceType::DimmablePlug: return dimmablePlug_.begin(config_.initialState, config_.initialBrightness);
     case EasyMatterDeviceType::TemperatureSensor: return temperatureSensor_.begin(config_.initialTemperatureC);
     case EasyMatterDeviceType::HumiditySensor: return humiditySensor_.begin(config_.initialHumidityPercent);
@@ -91,8 +106,19 @@ bool EasyMatterClass::begin(const EasyMatterConfig &c) {
   if (!c.wifiSSID || !c.wifiPassword || !c.deviceName || !c.vendor) return false;
   const bool pairingResetRequested = pairingResetPin_ != 0xFF && digitalRead(pairingResetPin_) == LOW;
   config_=c; brightness_=c.initialBrightness; colorTemp_=c.initialColorTemperatureMireds; state_=c.initialState;
+  if (c.deviceType == EasyMatterDeviceType::Switch) {
+    if (settings.begin("easymatter", false)) {
+      state_ = settings.getBool("switchOn", c.initialState);
+      settings.end();
+    }
+    if (c.switchMode == EasyMatterSwitchMode::TwoWaySwitch && input_.used) {
+      const bool active = input_.mode == INPUT_PULLUP ? digitalRead(input_.pin) == LOW : digitalRead(input_.pin) == HIGH;
+      state_ = active;
+    }
+    config_.initialState = state_;
+  }
   Matter.setVendorName(c.vendor); Matter.setProductName(c.deviceName); Matter.setDeviceName(c.deviceName);
-  Serial.printf("EasyMatter 0.3.2\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
+  Serial.printf("EasyMatter 0.3.3\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
 #if !CONFIG_ENABLE_CHIPOBLE
   if (!Matter.selectNetwork(MATTER_NETWORK_WIFI, true)) {
     Serial.println("Matter Wi-Fi commissioning setup failed");
@@ -126,9 +152,10 @@ bool EasyMatterClass::readOn_() const { switch(config_.deviceType) {
  case EasyMatterDeviceType::Light:return const_cast<MatterOnOffLight&>(onOff_).getOnOff(); case EasyMatterDeviceType::DimmableLight:return const_cast<MatterDimmableLight&>(dimmable_).getOnOff();
  case EasyMatterDeviceType::RgbLight:return const_cast<MatterColorLight&>(rgb_).getOnOff(); case EasyMatterDeviceType::ColorTemperatureLight:return const_cast<MatterColorTemperatureLight&>(colorTempLight_).getOnOff();
  case EasyMatterDeviceType::EnhancedColorLight:return const_cast<MatterEnhancedColorLight&>(enhanced_).getOnOff(); case EasyMatterDeviceType::Plug:return const_cast<MatterOnOffPlugin&>(plug_).getOnOff();
- case EasyMatterDeviceType::DimmablePlug:return const_cast<MatterDimmablePlugin&>(dimmablePlug_).getOnOff(); case EasyMatterDeviceType::Fan:return const_cast<MatterFan&>(fan_).getOnOff(); default:return state_; } }
+ case EasyMatterDeviceType::Switch:return const_cast<EasyMatterMountedSwitchEndpoint&>(switchEndpoint_).getOnOff(); case EasyMatterDeviceType::DimmablePlug:return const_cast<MatterDimmablePlugin&>(dimmablePlug_).getOnOff(); case EasyMatterDeviceType::Fan:return const_cast<MatterFan&>(fan_).getOnOff(); default:return state_; } }
 void EasyMatterClass::writeOutput_(bool s) { if(!output_.used)return; if(pwmConfigured_) ledcWrite(output_.pin,s?brightness_:0); else digitalWrite(output_.pin,(s==output_.activeHigh)?HIGH:LOW); }
-void EasyMatterClass::notify_(bool s) { if(state_!=s) {state_=s; writeOutput_(s); if(callback_) callback_(s);} }
+void EasyMatterClass::persistSwitchState_(bool s) { if (config_.deviceType != EasyMatterDeviceType::Switch) return; if (settings.begin("easymatter", false)) { settings.putBool("switchOn", s); settings.end(); } }
+void EasyMatterClass::notify_(bool s) { if(state_!=s) {state_=s; persistSwitchState_(s); writeOutput_(s); if(callback_) callback_(s);} }
 void EasyMatterClass::update() {
  if (!ready_) return;
  if(!Matter.isWiFiConnected() && int32_t(millis()-wifiRetryAt_)>=0){WiFi.reconnect();wifiRetryAt_=millis()+10000;}
@@ -137,14 +164,14 @@ void EasyMatterClass::update() {
  case EasyMatterDeviceType::Light: notify_(onOff_.getOnOff()); break; case EasyMatterDeviceType::DimmableLight: notify_(dimmable_.getOnOff()); brightness_=dimmable_.getBrightness(); break;
  case EasyMatterDeviceType::RgbLight: notify_(rgb_.getOnOff()); brightness_=uint8_t(uint16_t(rgb_.getColorHSV().v)*255/254); break; case EasyMatterDeviceType::ColorTemperatureLight: notify_(colorTempLight_.getOnOff()); brightness_=colorTempLight_.getBrightness(); colorTemp_=colorTempLight_.getColorTemperature(); break;
  case EasyMatterDeviceType::EnhancedColorLight: notify_(enhanced_.getOnOff()); brightness_=enhanced_.getBrightness(); colorTemp_=enhanced_.getColorTemperature(); break;
- case EasyMatterDeviceType::Plug: notify_(plug_.getOnOff()); break; case EasyMatterDeviceType::DimmablePlug: notify_(dimmablePlug_.getOnOff()); brightness_=dimmablePlug_.getLevel(); break; case EasyMatterDeviceType::Fan: notify_(fan_.getOnOff()); brightness_=uint8_t(uint16_t(fan_.getSpeedPercent())*255/100); break; default: break;
+ case EasyMatterDeviceType::Plug: notify_(plug_.getOnOff()); break; case EasyMatterDeviceType::Switch: notify_(switchEndpoint_.getOnOff()); break; case EasyMatterDeviceType::DimmablePlug: notify_(dimmablePlug_.getOnOff()); brightness_=dimmablePlug_.getLevel(); break; case EasyMatterDeviceType::Fan: notify_(fan_.getOnOff()); brightness_=uint8_t(uint16_t(fan_.getSpeedPercent())*255/100); break; default: break;
  }
  if (brightness_ != previousBrightness) { if(pwmConfigured_) ledcWrite(output_.pin, isOn() ? brightness_ : 0); if(brightnessCallback_) brightnessCallback_(brightness_); }
  if (config_.deviceType==EasyMatterDeviceType::ColorTemperatureLight || config_.deviceType==EasyMatterDeviceType::EnhancedColorLight) { colorTemp_=colorTemperature(); if(previousColorTemp!=colorTemp_ && colorTemperatureCallback_) colorTemperatureCallback_(colorTemp_); }
  if(config_.deviceType==EasyMatterDeviceType::RgbLight || config_.deviceType==EasyMatterDeviceType::EnhancedColorLight) { espRgbColor_t c=config_.deviceType==EasyMatterDeviceType::RgbLight?rgb_.getColorRGB():enhanced_.getColorRGB(); if(colorCallback_ && (c.r!=lastRed_||c.g!=lastGreen_||c.b!=lastBlue_)) colorCallback_(c.r,c.g,c.b);lastRed_=c.r;lastGreen_=c.g;lastBlue_=c.b; }
-  if(input_.used) { bool raw=digitalRead(input_.pin); if(raw!=input_.last){input_.last=raw;input_.changed=millis();} if(raw!=input_.stable && millis()-input_.changed>=input_.debounce){input_.stable=raw; const bool pressed=input_.mode==INPUT_PULLUP?raw==LOW:raw==HIGH; if(config_.deviceType==EasyMatterDeviceType::ContactSensor)setContact(pressed); else if(config_.deviceType==EasyMatterDeviceType::MotionSensor)setMotion(pressed); else if(config_.deviceType==EasyMatterDeviceType::GenericSwitch){if(pressed)genericSwitch_.press();else genericSwitch_.release();} else if(pressed)setOn(!isOn()); } }
+ if(input_.used) { bool raw=digitalRead(input_.pin); if(raw!=input_.last){input_.last=raw;input_.changed=millis();} if(raw!=input_.stable && millis()-input_.changed>=input_.debounce){input_.stable=raw; const bool pressed=input_.mode==INPUT_PULLUP?raw==LOW:raw==HIGH; if(config_.deviceType==EasyMatterDeviceType::ContactSensor)setContact(pressed); else if(config_.deviceType==EasyMatterDeviceType::MotionSensor)setMotion(pressed); else if(config_.deviceType==EasyMatterDeviceType::GenericSwitch){if(pressed)genericSwitch_.press();else genericSwitch_.release();} else if(config_.deviceType==EasyMatterDeviceType::Switch){if(config_.switchMode==EasyMatterSwitchMode::TwoWaySwitch)setOn(pressed);else if(pressed)setOn(!isOn());} else if(pressed)setOn(!isOn()); } }
 }
-bool EasyMatterClass::setOn(bool s) { if(config_.deviceType==EasyMatterDeviceType::TemperatureSensor||config_.deviceType==EasyMatterDeviceType::HumiditySensor||config_.deviceType==EasyMatterDeviceType::TemperatureHumiditySensor||config_.deviceType==EasyMatterDeviceType::ContactSensor||config_.deviceType==EasyMatterDeviceType::MotionSensor||config_.deviceType==EasyMatterDeviceType::PressureSensor||config_.deviceType==EasyMatterDeviceType::IlluminanceSensor||config_.deviceType==EasyMatterDeviceType::WaterLeakSensor||config_.deviceType==EasyMatterDeviceType::WaterFreezeSensor||config_.deviceType==EasyMatterDeviceType::RainSensor||config_.deviceType==EasyMatterDeviceType::GenericSwitch||config_.deviceType==EasyMatterDeviceType::Thermostat||config_.deviceType==EasyMatterDeviceType::WindowCovering||config_.deviceType==EasyMatterDeviceType::TemperatureControlledCabinet)return false; if(!ready_){state_=s;config_.initialState=s;writeOutput_(s);return true;} bool ok=false; switch(config_.deviceType) {case EasyMatterDeviceType::Light:ok=onOff_.setOnOff(s);break;case EasyMatterDeviceType::DimmableLight:ok=dimmable_.setOnOff(s);break;case EasyMatterDeviceType::RgbLight:ok=rgb_.setOnOff(s);break;case EasyMatterDeviceType::ColorTemperatureLight:ok=colorTempLight_.setOnOff(s);break;case EasyMatterDeviceType::EnhancedColorLight:ok=enhanced_.setOnOff(s);break;case EasyMatterDeviceType::Plug:ok=plug_.setOnOff(s);break;case EasyMatterDeviceType::DimmablePlug:ok=dimmablePlug_.setOnOff(s);break;case EasyMatterDeviceType::Fan:ok=fan_.setOnOff(s);break;default:return false;} if(ok){bool changed=state_!=s;state_=s;if(pwmConfigured_&&config_.deviceType==EasyMatterDeviceType::Fan)ledcWrite(output_.pin,s?uint32_t(fan_.getSpeedPercent())*255/100:0);else writeOutput_(s);if(changed&&callback_)callback_(s);}return ok; }
+bool EasyMatterClass::setOn(bool s) { if(config_.deviceType==EasyMatterDeviceType::TemperatureSensor||config_.deviceType==EasyMatterDeviceType::HumiditySensor||config_.deviceType==EasyMatterDeviceType::TemperatureHumiditySensor||config_.deviceType==EasyMatterDeviceType::ContactSensor||config_.deviceType==EasyMatterDeviceType::MotionSensor||config_.deviceType==EasyMatterDeviceType::PressureSensor||config_.deviceType==EasyMatterDeviceType::IlluminanceSensor||config_.deviceType==EasyMatterDeviceType::WaterLeakSensor||config_.deviceType==EasyMatterDeviceType::WaterFreezeSensor||config_.deviceType==EasyMatterDeviceType::RainSensor||config_.deviceType==EasyMatterDeviceType::GenericSwitch||config_.deviceType==EasyMatterDeviceType::Thermostat||config_.deviceType==EasyMatterDeviceType::WindowCovering||config_.deviceType==EasyMatterDeviceType::TemperatureControlledCabinet)return false; if(!ready_){state_=s;config_.initialState=s;writeOutput_(s);return true;} bool ok=false; switch(config_.deviceType) {case EasyMatterDeviceType::Light:ok=onOff_.setOnOff(s);break;case EasyMatterDeviceType::DimmableLight:ok=dimmable_.setOnOff(s);break;case EasyMatterDeviceType::RgbLight:ok=rgb_.setOnOff(s);break;case EasyMatterDeviceType::ColorTemperatureLight:ok=colorTempLight_.setOnOff(s);break;case EasyMatterDeviceType::EnhancedColorLight:ok=enhanced_.setOnOff(s);break;case EasyMatterDeviceType::Plug:ok=plug_.setOnOff(s);break;case EasyMatterDeviceType::Switch:ok=switchEndpoint_.setOnOff(s);break;case EasyMatterDeviceType::DimmablePlug:ok=dimmablePlug_.setOnOff(s);break;case EasyMatterDeviceType::Fan:ok=fan_.setOnOff(s);break;default:return false;} if(ok){bool changed=state_!=s;state_=s;persistSwitchState_(s);if(pwmConfigured_&&config_.deviceType==EasyMatterDeviceType::Fan)ledcWrite(output_.pin,s?uint32_t(fan_.getSpeedPercent())*255/100:0);else writeOutput_(s);if(changed&&callback_)callback_(s);}return ok; }
 bool EasyMatterClass::isOn() const { return ready_?readOn_():state_; }
 bool EasyMatterClass::setBrightness(uint8_t v) { bool ok=false; switch(config_.deviceType){case EasyMatterDeviceType::DimmableLight:ok=dimmable_.setBrightness(v);break;case EasyMatterDeviceType::ColorTemperatureLight:ok=colorTempLight_.setBrightness(v);break;case EasyMatterDeviceType::EnhancedColorLight:ok=enhanced_.setBrightness(v);break;case EasyMatterDeviceType::DimmablePlug:ok=dimmablePlug_.setLevel(v);break;case EasyMatterDeviceType::RgbLight:{espHsvColor_t h=rgb_.getColorHSV();h.v=(uint16_t(v)*254)/255;ok=rgb_.setColorHSV(h);break;}default:return false;} if(ok){brightness_=v;if(pwmConfigured_)ledcWrite(output_.pin,isOn()?v:0);if(brightnessCallback_)brightnessCallback_(v);}return ok; }
 uint8_t EasyMatterClass::brightness() const {switch(config_.deviceType){case EasyMatterDeviceType::DimmableLight:return const_cast<MatterDimmableLight&>(dimmable_).getBrightness();case EasyMatterDeviceType::ColorTemperatureLight:return const_cast<MatterColorTemperatureLight&>(colorTempLight_).getBrightness();case EasyMatterDeviceType::EnhancedColorLight:return const_cast<MatterEnhancedColorLight&>(enhanced_).getBrightness();case EasyMatterDeviceType::DimmablePlug:return const_cast<MatterDimmablePlugin&>(dimmablePlug_).getLevel();case EasyMatterDeviceType::RgbLight:return uint8_t((uint16_t(const_cast<MatterColorLight&>(rgb_).getColorHSV().v)*255)/254);default:return brightness_;}}
@@ -156,7 +183,7 @@ float EasyMatterClass::temperature() const {if(config_.deviceType==EasyMatterDev
 bool EasyMatterClass::setHumidity(float v){if(!isfinite(v)||v<0||v>100)return false;bool ok=(config_.deviceType==EasyMatterDeviceType::HumiditySensor||config_.deviceType==EasyMatterDeviceType::TemperatureHumiditySensor)&&humiditySensor_.setHumidity(v);if(ok)humidityValue_.setLocalValue(v);return ok;}
 float EasyMatterClass::humidity() const {if(config_.deviceType==EasyMatterDeviceType::HumiditySensor||config_.deviceType==EasyMatterDeviceType::TemperatureHumiditySensor)return const_cast<MatterHumiditySensor&>(humiditySensor_).getHumidity();return humidityValue_.value();}
 bool EasyMatterClass::setContact(bool v){if(config_.deviceType==EasyMatterDeviceType::ContactSensor)return contact_.setContact(v);return false;} bool EasyMatterClass::setMotion(bool v){if(config_.deviceType==EasyMatterDeviceType::MotionSensor)return motion_.setOccupancy(v);return false;}
-bool EasyMatterClass::isContactClosed()const{return config_.deviceType==EasyMatterDeviceType::ContactSensor?const_cast<MatterContactSensor&>(contact_).getContact():false;} bool EasyMatterClass::isMotionDetected()const{return config_.deviceType==EasyMatterDeviceType::MotionSensor?const_cast<MatterOccupancySensor&>(motion_).getOccupancy():false;}
+bool EasyMatterClass::isContactClosed()const{return (config_.deviceType==EasyMatterDeviceType::ContactSensor)?const_cast<MatterContactSensor&>(contact_).getContact():false;} bool EasyMatterClass::isMotionDetected()const{return config_.deviceType==EasyMatterDeviceType::MotionSensor?const_cast<MatterOccupancySensor&>(motion_).getOccupancy():false;}
 bool EasyMatterClass::setPressure(float v){return config_.deviceType==EasyMatterDeviceType::PressureSensor&&isfinite(v)&&pressureSensor_.setPressure(v);}
 bool EasyMatterClass::setIlluminance(float v){return config_.deviceType==EasyMatterDeviceType::IlluminanceSensor&&isfinite(v)&&lightSensor_.setIlluminance(v);}
 float EasyMatterClass::pressure()const{return config_.deviceType==EasyMatterDeviceType::PressureSensor?const_cast<MatterPressureSensor&>(pressureSensor_).getPressure():NAN;} float EasyMatterClass::illuminance()const{return config_.deviceType==EasyMatterDeviceType::IlluminanceSensor?const_cast<MatterLightSensor&>(lightSensor_).getIlluminance():NAN;}

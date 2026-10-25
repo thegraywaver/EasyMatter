@@ -1,4 +1,4 @@
-# EasyMatter
+﻿# EasyMatter
 
 EasyMatter is an Arduino C++11 wrapper for Espressif's official Arduino Matter endpoints. It does not implement Matter or invent endpoint types. The current code supports the original ESP32-WROOM-32 and the Espressif Arduino-ESP32 Matter build; the requested Arduino-ESP32 3.3.12 target has not been compiled in this environment.
 
@@ -6,11 +6,11 @@ EasyMatter is an Arduino C++11 wrapper for Espressif's official Arduino Matter e
 
 | DEVICE | TESTED | WORKING |
 |---|---|---|
-| ESP-WROOM32 | ✅ | ✅ |
-| Arduino Nano ESP32 | ✅ | ✅ |
-| Arduino Uno R4 WIFI | ✅ | ❌ |
-| ESP32 CAM | ❌ | - |
-| Any other ESP32 for now | ❌ | - |
+| ESP-WROOM32 | âœ… | âœ… |
+| Arduino Nano ESP32 | âœ… | âœ… |
+| Arduino Uno R4 WIFI | âœ… | âŒ |
+| ESP32 CAM | âŒ | - |
+| Any other ESP32 for now | âŒ | - |
 
 ## Simple on/off light
 
@@ -52,9 +52,7 @@ For an ESP32-WROOM-32, connect one outer potentiometer leg to **3V3**, the other
 
 ## Doorbell button
 
-This profile sends button press and release events through Matter's Generic Switch endpoint. Connect the physical button between GPIO 18 and GND. The Matter controller sees a generic switch, not a dedicated doorbell device; create an automation in the controller to play a chime or send a notification. This profile does not provide a camera or video stream.
-
-In Alexa, add the device through Matter, then create a routine in **More → Routines → +**. Choose the doorbell button's press event as the trigger, then add an Alexa speech or announcement action such as “Hier ist jemand an der Tür”. Choose the Echo speaker that should speak. The available trigger and action names can vary with the Alexa app and controller.
+This example exposes the tactile button as a Matter contact sensor. It uses the Matter contact-sensor profile and reports open while idle, closed while pressed, then open again when released. Each press can trigger an Alexa routine without storing or alternating an on/off state. Connect the button between GPIO 18 and GND.
 
 ```cpp
 #include <EasyMatter.h>
@@ -67,7 +65,7 @@ void setup() {
   config.wifiPassword = "YOUR_WIFI_PASSWORD";
   config.vendor = "Your vendor";
   config.deviceName = "Doorbell button";
-  config.deviceType = EasyMatterDeviceType::Doorbell;
+  config.deviceType = EasyMatterDeviceType::ContactSensor;
 
   EasyMatter.button(18);
   EasyMatter.pairingResetButton(4);
@@ -82,11 +80,13 @@ void loop() {
 }
 ```
 
-On the ESP32-WROOM dev board, connect **D4 / GPIO 4** to **GND while powering on or resetting** to clear the existing Matter pairing and restart in an unpaired state. Release the connection after startup. This is a factory reset of Matter fabric data, so the device must be added again in the controller app. The first pairing is already available automatically; this pin is for recovering/re-pairing. Do not also use GPIO 4 as an LED/PWM output when it is configured as the pairing reset pin.
+In Alexa, create a routine using the contact sensor's **Closed** event as the trigger, then add an announcement action such as "Someone is at the door." Alexa will list this device as a contact sensor. `EasyMatterDeviceType::ContactSensor` is used directly; in this button example, Alexa should trigger when the contact sensor closes.
+
+On an ESP32-WROOM dev board, connect **D4 / GPIO 4** to **GND while powering on or resetting** to clear the existing Matter pairing. Release it after startup, then pair the device again. Do not use GPIO 4 for another input or output while it is configured as the pairing reset pin.
 
 ## Install and commissioning
 
-Download `EasyMatter-v0.3.0.zip` from the [latest GitHub release](https://github.com/thegraywaver/EasyMatter/releases/latest), then in Arduino IDE choose **Sketch → Include Library → Add .ZIP Library...** and select the downloaded ZIP. The archive contains one `EasyMatter` folder at its top level. Restart the IDE after installation.
+Download `EasyMatter-v0.3.0.zip` from the [latest GitHub release](https://github.com/thegraywaver/EasyMatter/releases/latest), then in Arduino IDE choose **Sketch â†’ Include Library â†’ Add .ZIP Library...** and select the downloaded ZIP. The archive contains one `EasyMatter` folder at its top level. Restart the IDE after installation.
 
 Select an original ESP32-WROOM-32 board and **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the manual pairing code plus a scannable QR code directly in the Serial Monitor. If the installed ESP32 core lacks its QR console encoder, EasyMatter prints the onboarding URL as a fallback. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the QR shown in the Serial Monitor or enter the manual code; the exact app steps depend on Alexa app version and account/device support.
 
@@ -118,21 +118,22 @@ Set `config.deviceType` before `EasyMatter.begin(config)`. Each profile creates 
 - Lights: `EasyMatterDeviceType::Light`, `EasyMatterDeviceType::DimmableLight`, `EasyMatterDeviceType::RgbLight`, `EasyMatterDeviceType::ColorTemperatureLight`, `EasyMatterDeviceType::EnhancedColorLight`.
 - Outlets: `EasyMatterDeviceType::Plug`, `EasyMatterDeviceType::DimmablePlug`.
 - Sensors: `EasyMatterDeviceType::TemperatureSensor`, `EasyMatterDeviceType::HumiditySensor`, `EasyMatterDeviceType::TemperatureHumiditySensor`, `EasyMatterDeviceType::ContactSensor`, `EasyMatterDeviceType::MotionSensor`, `EasyMatterDeviceType::PressureSensor`, `EasyMatterDeviceType::IlluminanceSensor`, `EasyMatterDeviceType::WaterLeakSensor`, `EasyMatterDeviceType::WaterFreezeSensor`, `EasyMatterDeviceType::RainSensor`.
-- Controls: `EasyMatterDeviceType::Thermostat`, `EasyMatterDeviceType::Fan`, `EasyMatterDeviceType::GenericSwitch`, `EasyMatterDeviceType::WindowCovering`, `EasyMatterDeviceType::TemperatureControlledCabinet`.
+- Controls: `EasyMatterDeviceType::Switch` (on/off switch endpoint), `EasyMatterDeviceType::Thermostat`, `EasyMatterDeviceType::Fan`, `EasyMatterDeviceType::GenericSwitch` (momentary event/button endpoint), `EasyMatterDeviceType::WindowCovering`, `EasyMatterDeviceType::TemperatureControlledCabinet`.
 
 ### Common API
 
 - `setOn(bool)`, `isOn()`, `onChange(callback)` synchronize supported on/off endpoints. Matter controller changes are polled by `update()` and become visible to local code.
 - `setBrightness(uint8_t)` / `brightness()` for dimmable light/plugin; for RGB light brightness changes the HSV value component. Matter's range maps 0-255 to its valid level representation.
 - `color(r,g,b)` for RGB and enhanced color lights; `onColorChange(callback)` reports controller and local color changes.
-- `setColorTemperature(mireds)` / `colorTemperature()` use Matter mired units (100–500).
+- `setColorTemperature(mireds)` / `colorTemperature()` use Matter mired units (100â€“500).
 - `setTemperature(C)`, `setHumidity(percent)`, `setContact(closed)`, `setMotion(occupied)`, `setPressure(hPa)`, `setIlluminance(lux)`, `setLeak(bool)`, `setFreeze(bool)`, `setRain(bool)` publish through matching sensor endpoints.
 - `sensor("temperature").setValue(x)` and `sensor("humidity").setValue(x)` call those Matter setters for profiles that contain the relevant endpoint.
 - Thermostat: `setLocalTemperature(C)`, `setHeatingSetpoint(C)`, `setCoolingSetpoint(C)`, and getters `temperature()`, `heatingSetpoint()`, `coolingSetpoint()`. The application still owns actual heating/cooling logic and safety.
 - Fan: `setFanSpeed(0..100)`, `fanSpeed()`, and `setOn()`.
 - Window covering: `setLiftPercentage()` updates the measured position; controller target commands are delivered to the callback registered by `onLiftTarget()`. The application must drive a motor and report movement. Percent semantics are 0=open, 100=closed.
-- Temperature controlled cabinet: `setCabinetSetpoint(C)` / `cabinetSetpoint()` expose the Matter temperature number endpoint, initially limited to -10..32 °C.
-- Generic switch: configure `EasyMatterDeviceType::GenericSwitch`; `button(pin)` sends Matter press/release events from the debounced local input. `switchClick()` emits a standard short click.
+- Temperature controlled cabinet: `setCabinetSetpoint(C)` / `cabinetSetpoint()` expose the Matter temperature number endpoint, initially limited to -10..32 Â°C.
+- Switch: configure `EasyMatterDeviceType::Switch`; with the default `EasyMatterSwitchMode::Button`, a debounced button press toggles the on/off state, which is saved across reboots. Set `switchMode = EasyMatterSwitchMode::TwoWaySwitch` for a maintained physical switch; LOW means on when using `button(pin)` / `INPUT_PULLUP`. Use `EasyMatterDeviceType::ContactSensor` with `button(pin)` for a tactile button trigger; each press reports closed and each release reports open.
+- Generic switch: configure `EasyMatterDeviceType::GenericSwitch`; `button(pin)` sends Matter press/release events from the debounced local input. `switchClick()` emits a standard short click. This event endpoint is categorized by Alexa separately from an on/off switch.
 - Hardware: `output(pin)`, `pwmOutput(pin, frequency, resolutionBits)`, `setPwm(value)`, `input(pin, mode, debounceMs)`, `analogInput(pin, resolutionBits)`, `analogValue()`, and `button(pin, debounceMs)`. Call `update()` frequently from `loop()`.
 - Pairing recovery: `pairingResetButton(pin)` uses an active-low pin with `INPUT_PULLUP`; hold it to GND during boot to erase the existing Matter fabric and reboot unpaired.
 - Display: no mandatory driver dependency. Use `display.attach(begin,title,line,show)` to bridge an optional display library.
@@ -151,6 +152,7 @@ EasyMatter does not assume GPIO numbers are I2C sensor drivers. Connect your pre
 | Temperature, humidity, pressure, illuminance | Official measurement endpoints | Temperature/humidity and pressure/illuminance profiles/setters implemented (initial defaults for latter two; setters available) |
 | Contact, occupancy/motion, leak, freeze, rain | Official Boolean-state endpoints | Implemented |
 | Thermostat | Official thermostat endpoint | Endpoint/setpoint APIs implemented; HVAC actuation remains app logic |
+| Matter on/off switch | On/off plug-in unit endpoint | Local button toggle or maintained switch; state persistence |
 | Generic Matter switch | Official switch event endpoint | Implemented as button gestures |
 | Fan | Official fan endpoint | Speed/on-off API implemented |
 | Window covering, temperature-controlled cabinet | Official endpoint classes | Profiles implemented; motor and cabinet control remain application hardware logic |

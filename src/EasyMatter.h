@@ -9,6 +9,11 @@
 #endif
 #include <Matter.h>
 
+class EasyMatterMountedSwitchEndpoint : public MatterOnOffPlugin, public ArduinoMatter {
+ public:
+  bool beginMountedSwitch(bool initialState);
+};
+
 class EasyMatterClass {
  public:
   typedef void (*ChangeCallback)(bool state);
@@ -56,11 +61,11 @@ class EasyMatterClass {
   EasyMatterIR ir;
  private:
   struct Pin { uint8_t pin, mode; bool activeHigh, stable, last; uint32_t changed; uint16_t debounce; bool used; };
-  bool startEndpoint_(); bool readOn_() const; void writeOutput_(bool state); void notify_(bool state);
+  bool startEndpoint_(); bool readOn_() const; void writeOutput_(bool state); void notify_(bool state); void persistSwitchState_(bool state);
   EasyMatterConfig config_; bool ready_, state_, pwmConfigured_; uint32_t wifiRetryAt_; uint8_t brightness_, lastRed_, lastGreen_, lastBlue_; uint16_t colorTemp_; ChangeCallback callback_; BrightnessCallback brightnessCallback_; ColorCallback colorCallback_; ColorTemperatureCallback colorTemperatureCallback_; PositionCallback positionCallback_;
   Pin output_, input_; uint8_t analogPin_, analogResolution_, pairingResetPin_; bool analogUsed_; EasyMatterSensorValue temperatureValue_, humidityValue_;
   MatterOnOffLight onOff_; MatterDimmableLight dimmable_; MatterColorLight rgb_;
-  MatterColorTemperatureLight colorTempLight_; MatterEnhancedColorLight enhanced_; MatterOnOffPlugin plug_; MatterDimmablePlugin dimmablePlug_;
+  MatterColorTemperatureLight colorTempLight_; MatterEnhancedColorLight enhanced_; MatterOnOffPlugin plug_; EasyMatterMountedSwitchEndpoint switchEndpoint_; MatterDimmablePlugin dimmablePlug_;
   MatterTemperatureSensor temperatureSensor_; MatterHumiditySensor humiditySensor_; MatterContactSensor contact_; MatterOccupancySensor motion_; MatterThermostat thermostat_;
   MatterPressureSensor pressureSensor_; MatterLightSensor lightSensor_; MatterWaterLeakDetector leak_; MatterWaterFreezeDetector freeze_; MatterRainSensor rain_; MatterGenericSwitch genericSwitch_; MatterFan fan_;
   MatterWindowCovering window_; MatterTemperatureControlledCabinet cabinet_;
