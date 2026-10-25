@@ -2,12 +2,57 @@
 #include <WiFi.h>
 #include <Preferences.h>
 #include <math.h>
+#if __has_include(<qrcode.h>)
+#include <qrcode.h>
+#define EASYMATTER_HAS_QR_CONSOLE 1
+#else
+#define EASYMATTER_HAS_QR_CONSOLE 0
+#endif
 
 EasyMatterClass EasyMatter;
 static Preferences settings;
 static bool updateTemperatureValue(void *context, float value) { return static_cast<EasyMatterClass *>(context)->setTemperature(value); }
 static bool updateHumidityValue(void *context, float value) { return static_cast<EasyMatterClass *>(context)->setHumidity(value); }
-EasyMatterClass::EasyMatterClass() : ready_(false), state_(false), pwmConfigured_(false), wifiRetryAt_(0), brightness_(128), lastRed_(0), lastGreen_(0), lastBlue_(0), colorTemp_(370), callback_(nullptr), brightnessCallback_(nullptr), colorCallback_(nullptr), colorTemperatureCallback_(nullptr), positionCallback_(nullptr), analogPin_(0), analogResolution_(12), analogUsed_(false) {
+static int hexValue_(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return -1;
+}
+static void printOnboardingQRCode_(const String &url) {
+  const int dataPosition = url.indexOf("data=");
+  if (dataPosition < 0) {
+    Serial.printf("Onboarding QR URL: %s\n", url.c_str());
+    return;
+  }
+  String encodedPayload = url.substring(dataPosition + 5);
+  const int parameterEnd = encodedPayload.indexOf('&');
+  if (parameterEnd >= 0) encodedPayload.remove(parameterEnd);
+  String payload;
+  payload.reserve(encodedPayload.length());
+  for (size_t i = 0; i < encodedPayload.length(); ++i) {
+    if (encodedPayload[i] == '%' && i + 2 < encodedPayload.length()) {
+      const int high = hexValue_(encodedPayload[i + 1]);
+      const int low = hexValue_(encodedPayload[i + 2]);
+      if (high >= 0 && low >= 0) {
+        payload += char((high << 4) | low);
+        i += 2;
+        continue;
+      }
+    }
+    payload += encodedPayload[i] == '+' ? ' ' : encodedPayload[i];
+  }
+#if EASYMATTER_HAS_QR_CONSOLE
+  esp_qrcode_config_t qrConfig = ESP_QRCODE_CONFIG_DEFAULT();
+  Serial.println("Matter onboarding QR code:");
+  if (esp_qrcode_generate(&qrConfig, payload.c_str()) == ESP_OK) return;
+  Serial.println("QR rendering failed; use this URL instead:");
+#else
+  Serial.println("This ESP32 core has no console QR encoder; use this URL:");
+#endif
+  Serial.println(url);
+}
+EasyMatterClass::EasyMatterClass() : ready_(false), state_(false), pwmConfigured_(false), wifiRetryAt_(0), brightness_(128), lastRed_(0), lastGreen_(0), lastBlue_(0), colorTemp_(370), callback_(nullptr), brightnessCallback_(nullptr), colorCallback_(nullptr), colorTemperatureCallback_(nullptr), positionCallback_(nullptr), analogPin_(0), analogResolution_(12), pairingResetPin_(0xFF), analogUsed_(false) {
   output_ = {0, OUTPUT, true, false, false, 0, 0, false}; input_ = {0, INPUT_PULLUP, true, false, false, 0, 35, false};
   temperatureValue_.setHandler(updateTemperatureValue, this); humidityValue_.setHandler(updateHumidityValue, this);
 }
@@ -44,15 +89,28 @@ bool EasyMatterClass::startEndpoint_() {
 }
 bool EasyMatterClass::begin(const EasyMatterConfig &c) {
   if (!c.wifiSSID || !c.wifiPassword || !c.deviceName || !c.vendor) return false;
+  const bool pairingResetRequested = pairingResetPin_ != 0xFF && digitalRead(pairingResetPin_) == LOW;
   config_=c; brightness_=c.initialBrightness; colorTemp_=c.initialColorTemperatureMireds; state_=c.initialState;
   Matter.setVendorName(c.vendor); Matter.setProductName(c.deviceName); Matter.setDeviceName(c.deviceName);
-  Serial.printf("EasyMatter 0.3.0\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
+  Serial.printf("EasyMatter 0.3.2\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
 #if !CONFIG_ENABLE_CHIPOBLE
+  if (!Matter.selectNetwork(MATTER_NETWORK_WIFI, true)) {
+    Serial.println("Matter Wi-Fi commissioning setup failed");
+    return false;
+  }
   WiFi.setAutoReconnect(true);
   matterConnectWiFi(c.wifiSSID,c.wifiPassword);
 #endif
   if (!startEndpoint_()) return false;
   Matter.begin(); ready_=true;
+  if (pairingResetRequested && Matter.isDeviceCommissioned()) {
+    Serial.println("Pairing reset requested on boot; clearing the Matter fabric and restarting");
+    Matter.decommission();
+    while (true) delay(1000);
+  }
+  if (pairingResetRequested) {
+    Serial.println("Pairing reset pin detected; device is already uncommissioned");
+  }
   if(config_.deviceType==EasyMatterDeviceType::RgbLight) setBrightness(c.initialBrightness);
   if (config_.deviceType == EasyMatterDeviceType::TemperatureSensor || config_.deviceType == EasyMatterDeviceType::TemperatureHumiditySensor) setTemperature(c.initialTemperatureC);
   if (config_.deviceType == EasyMatterDeviceType::HumiditySensor || config_.deviceType == EasyMatterDeviceType::TemperatureHumiditySensor) setHumidity(c.initialHumidityPercent);
@@ -60,7 +118,8 @@ bool EasyMatterClass::begin(const EasyMatterConfig &c) {
   if (config_.deviceType == EasyMatterDeviceType::Thermostat) { thermostat_.setLocalTemperature(c.initialTemperatureC); thermostat_.setCoolingHeatingSetpoints(20,23); }
   state_=readOn_(); brightness_=brightness(); colorTemp_=colorTemperature();
   if(output_.used){if(pwmConfigured_&&config_.deviceType==EasyMatterDeviceType::Fan)ledcWrite(output_.pin,uint32_t(fanSpeed())*255/100);else writeOutput_(state_);}
-  Serial.printf("WiFi: %s\nMatter: Ready\nPairing Code: %s\nOnboarding QR URL: %s\n",Matter.isWiFiConnected()?"Connected":"connecting",Matter.getManualPairingCode().c_str(),Matter.getOnboardingQRCodeUrl().c_str());
+  Serial.printf("WiFi: %s\nMatter: Ready\nPairing Code: %s\n",Matter.isWiFiConnected()?"Connected":"connecting",Matter.getManualPairingCode().c_str());
+  printOnboardingQRCode_(Matter.getOnboardingQRCodeUrl());
   return true;
 }
 bool EasyMatterClass::readOn_() const { switch(config_.deviceType) {
@@ -116,6 +175,7 @@ bool EasyMatterClass::output(uint8_t p,uint8_t m,bool ah){pinMode(p,m);output_={
 bool EasyMatterClass::pwmOutput(uint8_t p,uint32_t hz,uint8_t bits){if(!ledcAttach(p,hz,bits))return false;output_={p,OUTPUT,true,false,false,0,0,true};pwmConfigured_=true;ledcWrite(p,isOn()?brightness_:0);return true;}
 bool EasyMatterClass::setPwm(uint8_t v){if(!output_.used||!pwmConfigured_)return false;return ledcWrite(output_.pin,v);}
 bool EasyMatterClass::input(uint8_t p,uint8_t m,uint16_t d){pinMode(p,m);bool raw=digitalRead(p);input_={p,m,true,raw,raw,millis(),d,true};return true;}void EasyMatterClass::button(uint8_t p,uint16_t d){input(p,INPUT_PULLUP,d);}
+void EasyMatterClass::pairingResetButton(uint8_t p){pairingResetPin_=p;pinMode(p,INPUT_PULLUP);}
 bool EasyMatterClass::analogInput(uint8_t p,uint8_t bits){if(bits<9||bits>12)return false;analogReadResolution(bits);analogPin_=p;analogResolution_=bits;analogUsed_=true;return true;}uint16_t EasyMatterClass::analogValue()const{return analogUsed_?analogRead(analogPin_):0;}
 void EasyMatterClass::onChange(ChangeCallback c){callback_=c;}
 void EasyMatterClass::onBrightnessChange(BrightnessCallback c){brightnessCallback_=c;} void EasyMatterClass::onColorChange(ColorCallback c){colorCallback_=c;}

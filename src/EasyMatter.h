@@ -43,6 +43,7 @@ class EasyMatterClass {
   bool input(uint8_t pin, uint8_t mode = INPUT_PULLUP, uint16_t debounceMs = 35);
   bool analogInput(uint8_t pin, uint8_t resolutionBits = 12); uint16_t analogValue() const;
   void button(uint8_t pin, uint16_t debounceMs = 35);
+  void pairingResetButton(uint8_t pin);
   void onChange(ChangeCallback callback);
   void onBrightnessChange(BrightnessCallback callback); void onColorChange(ColorCallback callback);
   void onColorTemperatureChange(ColorTemperatureCallback callback);
@@ -57,7 +58,7 @@ class EasyMatterClass {
   struct Pin { uint8_t pin, mode; bool activeHigh, stable, last; uint32_t changed; uint16_t debounce; bool used; };
   bool startEndpoint_(); bool readOn_() const; void writeOutput_(bool state); void notify_(bool state);
   EasyMatterConfig config_; bool ready_, state_, pwmConfigured_; uint32_t wifiRetryAt_; uint8_t brightness_, lastRed_, lastGreen_, lastBlue_; uint16_t colorTemp_; ChangeCallback callback_; BrightnessCallback brightnessCallback_; ColorCallback colorCallback_; ColorTemperatureCallback colorTemperatureCallback_; PositionCallback positionCallback_;
-  Pin output_, input_; uint8_t analogPin_, analogResolution_; bool analogUsed_; EasyMatterSensorValue temperatureValue_, humidityValue_;
+  Pin output_, input_; uint8_t analogPin_, analogResolution_, pairingResetPin_; bool analogUsed_; EasyMatterSensorValue temperatureValue_, humidityValue_;
   MatterOnOffLight onOff_; MatterDimmableLight dimmable_; MatterColorLight rgb_;
   MatterColorTemperatureLight colorTempLight_; MatterEnhancedColorLight enhanced_; MatterOnOffPlugin plug_; MatterDimmablePlugin dimmablePlug_;
   MatterTemperatureSensor temperatureSensor_; MatterHumiditySensor humiditySensor_; MatterContactSensor contact_; MatterOccupancySensor motion_; MatterThermostat thermostat_;

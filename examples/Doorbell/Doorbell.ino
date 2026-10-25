@@ -11,6 +11,7 @@ void setup() {
   config.deviceType = EasyMatterDeviceType::Doorbell;
 
   EasyMatter.button(18);
+  EasyMatter.pairingResetButton(4);
 
   if (!EasyMatter.begin(config)) {
     Serial.println("EasyMatter initialization failed");

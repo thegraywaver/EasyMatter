@@ -44,6 +44,12 @@ void loop() {
 
 `EasyMatter.update()` reads the debounced button and keeps the GPIO output synchronized with the Matter on/off state. Use an LED with a suitable resistor or a low-voltage driver; never connect mains voltage directly to an ESP32 GPIO.
 
+## Analog dimmer with a potentiometer
+
+The [AnalogDimmer example](examples/AnalogDimmer/AnalogDimmer.ino) reads a potentiometer with `analogRead` through `EasyMatter.analogInput()` and maps its position to the brightness of a Matter `DimmableLight`. Turn it fully left to switch the light off; turning it right sets brightness and switches it on. The potentiometer controls this light locally; it is not a Matter remote switch controlling a separate light.
+
+For an ESP32-WROOM-32, connect one outer potentiometer leg to **3V3**, the other to **GND**, and the middle leg (wiper) to **GPIO 34 / IO34**. Use 3.3 V only. GPIO 34 is an input-only ADC pin and is suitable for this example. Connect an LED with a suitable resistor to **GPIO 4** for local PWM brightness output. For a larger lamp, use an appropriate transistor or LED driver; do not connect a lamp directly to the GPIO.
+
 ## Doorbell button
 
 This profile sends button press and release events through Matter's Generic Switch endpoint. Connect the physical button between GPIO 18 and GND. The Matter controller sees a generic switch, not a dedicated doorbell device; create an automation in the controller to play a chime or send a notification. This profile does not provide a camera or video stream.
@@ -64,6 +70,7 @@ void setup() {
   config.deviceType = EasyMatterDeviceType::Doorbell;
 
   EasyMatter.button(18);
+  EasyMatter.pairingResetButton(4);
 
   if (!EasyMatter.begin(config)) {
     Serial.println("EasyMatter initialization failed");
@@ -75,11 +82,13 @@ void loop() {
 }
 ```
 
+On the ESP32-WROOM dev board, connect **D4 / GPIO 4** to **GND while powering on or resetting** to clear the existing Matter pairing and restart in an unpaired state. Release the connection after startup. This is a factory reset of Matter fabric data, so the device must be added again in the controller app. The first pairing is already available automatically; this pin is for recovering/re-pairing. Do not also use GPIO 4 as an LED/PWM output when it is configured as the pairing reset pin.
+
 ## Install and commissioning
 
 Download `EasyMatter-v0.3.0.zip` from the [latest GitHub release](https://github.com/thegraywaver/EasyMatter/releases/latest), then in Arduino IDE choose **Sketch → Include Library → Add .ZIP Library...** and select the downloaded ZIP. The archive contains one `EasyMatter` folder at its top level. Restart the IDE after installation.
 
-Select an original ESP32-WROOM-32 board and **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the real pairing code and onboarding QR URL returned by Espressif. A QR URL is not an ASCII QR code; scan/use the code through the controller's supported onboarding flow. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the onboarding QR code or enter the manual code printed by the sketch; the exact app steps depend on Alexa app version and account/device support.
+Select an original ESP32-WROOM-32 board and **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the manual pairing code plus a scannable QR code directly in the Serial Monitor. If the installed ESP32 core lacks its QR console encoder, EasyMatter prints the onboarding URL as a fallback. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the QR shown in the Serial Monitor or enter the manual code; the exact app steps depend on Alexa app version and account/device support.
 
 ```cpp
 #include <EasyMatter.h>
@@ -125,6 +134,7 @@ Set `config.deviceType` before `EasyMatter.begin(config)`. Each profile creates 
 - Temperature controlled cabinet: `setCabinetSetpoint(C)` / `cabinetSetpoint()` expose the Matter temperature number endpoint, initially limited to -10..32 °C.
 - Generic switch: configure `EasyMatterDeviceType::GenericSwitch`; `button(pin)` sends Matter press/release events from the debounced local input. `switchClick()` emits a standard short click.
 - Hardware: `output(pin)`, `pwmOutput(pin, frequency, resolutionBits)`, `setPwm(value)`, `input(pin, mode, debounceMs)`, `analogInput(pin, resolutionBits)`, `analogValue()`, and `button(pin, debounceMs)`. Call `update()` frequently from `loop()`.
+- Pairing recovery: `pairingResetButton(pin)` uses an active-low pin with `INPUT_PULLUP`; hold it to GND during boot to erase the existing Matter fabric and reboot unpaired.
 - Display: no mandatory driver dependency. Use `display.attach(begin,title,line,show)` to bridge an optional display library.
 - Reset: `resetPairing()` calls Espressif `Matter.decommission()`. `resetSettings()` clears only EasyMatter's Preferences namespace. `resetWiFi()` erases Wi-Fi credentials saved by Arduino WiFi. `factoryReset()` performs settings and Wi-Fi erasure, then Matter decommission. These are explicit calls.
 
