@@ -2,6 +2,16 @@
 
 EasyMatter is an Arduino C++11 wrapper for Espressif's official Arduino Matter endpoints. It does not implement Matter or invent endpoint types. The current code supports the original ESP32-WROOM-32 and the Espressif Arduino-ESP32 Matter build; the requested Arduino-ESP32 3.3.12 target has not been compiled in this environment.
 
+#VERIFIED CHIPS
+
+| DEVICE | TESTED | WORKING |
+|---|---|---|
+| ESP-WROOM32 | ✅ | ✅ |
+| Arduino Nano ESP32 | ✅ | ✅ |
+| Arduino Uno R4 WIFI | ✅ | ❌ |
+| ESP32 CAM | ❌ | - |
+| Any other ESP32 for now | ❌ | - |
+
 ## Simple on/off light
 
 This example creates a basic Matter light. A button on GPIO 18 toggles the light, and a low-voltage LED or driver connected to GPIO 4 follows the Matter state. Connect the button between GPIO 18 and GND.
