@@ -46,7 +46,7 @@ bool EasyMatterClass::begin(const EasyMatterConfig &c) {
   if (!c.wifiSSID || !c.wifiPassword || !c.deviceName || !c.vendor) return false;
   config_=c; brightness_=c.initialBrightness; colorTemp_=c.initialColorTemperatureMireds; state_=c.initialState;
   Matter.setVendorName(c.vendor); Matter.setProductName(c.deviceName); Matter.setDeviceName(c.deviceName);
-  Serial.printf("EasyMatter 0.2.0\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
+  Serial.printf("EasyMatter 0.3.0\nWiFi: starting\nDevice: %s\nVendor: %s\n",c.deviceName,c.vendor);
 #if !CONFIG_ENABLE_CHIPOBLE
   WiFi.setAutoReconnect(true);
   matterConnectWiFi(c.wifiSSID,c.wifiPassword);
