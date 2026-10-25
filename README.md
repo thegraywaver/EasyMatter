@@ -2,6 +2,38 @@
 
 EasyMatter is an Arduino C++11 wrapper for Espressif's official Arduino Matter endpoints. It does not implement Matter or invent endpoint types. The current code supports the original ESP32-WROOM-32 and the Espressif Arduino-ESP32 Matter build; the requested Arduino-ESP32 3.3.12 target has not been compiled in this environment.
 
+## Simple on/off light
+
+This example creates a basic Matter light. A button on GPIO 18 toggles the light, and a low-voltage LED or driver connected to GPIO 4 follows the Matter state. Connect the button between GPIO 18 and GND.
+
+```cpp
+#include <EasyMatter.h>
+
+EasyMatterConfig config;
+
+void setup() {
+  Serial.begin(115200);
+  config.wifiSSID = "YOUR_WIFI_SSID";
+  config.wifiPassword = "YOUR_WIFI_PASSWORD";
+  config.vendor = "Your vendor";
+  config.deviceName = "Simple LED";
+  config.deviceType = EasyMatterDeviceType::Light;
+
+  EasyMatter.output(4, OUTPUT);
+  EasyMatter.button(18);
+
+  if (!EasyMatter.begin(config)) {
+    Serial.println("EasyMatter initialization failed");
+  }
+}
+
+void loop() {
+  EasyMatter.update();
+}
+```
+
+`EasyMatter.update()` reads the debounced button and keeps the GPIO output synchronized with the Matter on/off state. Use an LED with a suitable resistor or a low-voltage driver; never connect mains voltage directly to an ESP32 GPIO.
+
 ## Install and commissioning
 
 Copy this folder into `Documents/Arduino/libraries/EasyMatter`, restart the IDE, select an original ESP32-WROOM-32 board, and select **Huge APP (3 MB No OTA / 1 MB SPIFFS)**. Espressif's Matter build needs a large app partition. On the original ESP32 prebuilt Matter library, use on-network Wi-Fi commissioning. `begin()` starts Wi-Fi from supplied credentials, constructs the endpoint, starts Matter, and prints the real pairing code and onboarding QR URL returned by Espressif. A QR URL is not an ASCII QR code; scan/use the code through the controller's supported onboarding flow. The controller must still commission the device onto its Matter fabric. For Alexa, start device addition in the Alexa app and scan the onboarding QR code or enter the manual code printed by the sketch; the exact app steps depend on Alexa app version and account/device support.
